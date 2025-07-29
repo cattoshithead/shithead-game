@@ -1,0 +1,83 @@
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const { Game } = require('./game');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+
+// In-memory storage for game rooms and tournaments
+const rooms = {};
+const tournaments = {};
+
+io.on('connection', (socket) => {
+  console.log('Client connected', socket.id);
+
+  socket.on('createRoom', ({ roomId, players }) => {
+    const game = new Game(players);
+    rooms[roomId] = { game, players };
+    socket.join(roomId);
+    io.to(roomId).emit('roomCreated', { roomId });
+  });
+
+  socket.on('joinRoom', ({ roomId, playerName }) => {
+    const room = rooms[roomId];
+    if (room) {
+      room.players.push(playerName);
+      socket.join(roomId);
+      io.to(roomId).emit('playerJoined', { playerName });
+    }
+  });
+
+  socket.on('makeMove', ({ roomId, playerIndex, move }) => {const room = rooms[roomId];
+if (!room) return;
+const game = room.game;
+
+// Validate turn
+if (game.currentPlayer !== playerIndex) {
+  socket.emit('invalidMove', { reason: 'Not your turn.' });
+  return;
+}
+
+const player = game.players[playerIndex];
+
+try {
+  // Convert indices to card objects
+  const cardsToPlay = move.map(i => player.hand[i]);
+
+  // Play the turn
+  const status = game.playTurn(player, cardsToPlay);
+
+  // Build serialized state
+  const state = {
+    currentPlayer: game.currentPlayer,
+    players: game.players.map(p => ({
+      id: p.id,
+      hand: p.hand.map(c => c.toString()),
+      faceUp: p.faceUp.map(c => c.toString()),
+      faceDownCount: p.faceDown.length,
+      finished: p.finished,
+    })),
+    pileTop: game.pile.length > 0 ? game.pile[game.pile.length - 1].toString() : null,
+    pileCount: game.pile.length,
+    deckCount: game.deck.length,
+    status,
+  };
+
+  // Broadcast state
+  io.to(roomId).emit('stateUpdate', state);
+} catch (err) {
+  socket.emit('invalidMove', { reason: err.message || 'Invalid move.' });
+}});
+  });
+
+  socket.on('disconnect', () => {
+  console.log('Client disconnected', socket.id);
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
