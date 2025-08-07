@@ -34,7 +34,10 @@ export default function App() {
    * player's starting hand into component state for rendering.
    */
   const startGame = () => {
-    const newGame = new Game(['You', 'Computer']);
+    const newGame = new Game(2);
+    // assign player names manually for compatibility
+    newGame.players[0].name = 'You';
+    newGame.players[1].name = 'Computer';
     setGame(newGame);
     // Copy the player's starting hand into state
     setPlayerHand([...newGame.players[0].hand]);
